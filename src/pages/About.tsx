@@ -56,13 +56,12 @@ const About = () => {
                 <span>Randevu Al</span>
               </a>
             </div>
-            <div className="relative">
+            <div className="relative flex items-center justify-center">
               <img
-                src="/images/18.webp"
-                alt="Dt. Veysel Arslan Tabelası"
-                className="rounded-2xl shadow-xl"
+                src="/images/logo-veysel.png"
+                alt="Dt. Veysel Arslan Logo"
+                className="w-full max-w-md drop-shadow-xl"
               />
-              <div className="absolute -bottom-4 -left-4 w-24 h-24 bg-cyan-500 rounded-full opacity-20 blur-xl"></div>
             </div>
           </div>
         </div>
