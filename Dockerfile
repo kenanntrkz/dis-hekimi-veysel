@@ -7,7 +7,7 @@ COPY package.json pnpm-lock.yaml* ./
 RUN pnpm install
 
 COPY . .
-RUN pnpm build
+RUN pnpm exec tsc -b && pnpm exec vite build
 
 FROM nginx:alpine
 COPY --from=builder /app/dist /usr/share/nginx/html
