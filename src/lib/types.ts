@@ -1,5 +1,6 @@
 export interface Appointment {
   id: number;
+  referenceCode: string | null;
   name: string;
   phone: string;
   email: string | null;
