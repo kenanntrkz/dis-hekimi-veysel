@@ -1,6 +1,7 @@
 import { useState } from 'react'
-import { Phone, MapPin, Clock, Mail, MessageCircle, Calendar, CheckCircle } from 'lucide-react'
+import { Phone, MapPin, Clock, Mail, MessageCircle, Calendar, CheckCircle, Search, Copy, Check } from 'lucide-react'
 import { api } from '../lib/api'
+import { Appointment } from '../lib/types'
 
 const contactInfo = [
   {
@@ -61,8 +62,22 @@ const Contact = () => {
   const [apptLoading, setApptLoading] = useState(false)
   const [apptSent, setApptSent] = useState(false)
   const [apptError, setApptError] = useState('')
+  const [apptRefCode, setApptRefCode] = useState('')
   const [bookedSlots, setBookedSlots] = useState<string[]>([])
   const [slotsLoading, setSlotsLoading] = useState(false)
+  const [copied, setCopied] = useState(false)
+
+  // Randevu sorgulama state
+  const [lookupCode, setLookupCode] = useState('')
+  const [lookedUp, setLookedUp] = useState<Appointment | null>(null)
+  const [lookupLoading, setLookupLoading] = useState(false)
+  const [lookupError, setLookupError] = useState('')
+  const [rescheduleMode, setRescheduleMode] = useState(false)
+  const [newDate, setNewDate] = useState('')
+  const [newTime, setNewTime] = useState('')
+  const [lookupBookedSlots, setLookupBookedSlots] = useState<string[]>([])
+  const [actionLoading, setActionLoading] = useState(false)
+  const [actionMsg, setActionMsg] = useState('')
 
   // Mesaj formu state
   const [msg, setMsg] = useState({
@@ -86,6 +101,78 @@ const Contact = () => {
     }
   }
 
+  function copyCode(code: string) {
+    navigator.clipboard.writeText(code).then(() => {
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    })
+  }
+
+  async function handleLookup(e: React.FormEvent) {
+    e.preventDefault()
+    if (!lookupCode.trim()) return
+    setLookupLoading(true)
+    setLookupError('')
+    setLookedUp(null)
+    setActionMsg('')
+    setRescheduleMode(false)
+    try {
+      const result = await api.get<Appointment>(`/api/appointments/lookup?code=${lookupCode.trim().toUpperCase()}`)
+      setLookedUp(result)
+    } catch (err) {
+      setLookupError(err instanceof Error ? err.message : 'Randevu bulunamadı.')
+    } finally {
+      setLookupLoading(false)
+    }
+  }
+
+  async function handleCancel() {
+    if (!lookedUp || !confirm('Randevunuzu iptal etmek istediğinizden emin misiniz?')) return
+    setActionLoading(true)
+    try {
+      const updated = await api.post<Appointment>('/api/appointments/cancel', { code: lookedUp.referenceCode })
+      setLookedUp(updated)
+      setActionMsg('Randevunuz iptal edildi.')
+    } catch (err) {
+      setLookupError(err instanceof Error ? err.message : 'Bir hata oluştu.')
+    } finally {
+      setActionLoading(false)
+    }
+  }
+
+  async function handleRescheduleDateChange(date: string) {
+    setNewDate(date)
+    setNewTime('')
+    if (!date) { setLookupBookedSlots([]); return }
+    try {
+      const res = await api.get<{ bookedSlots: string[] }>(`/api/appointments/slots?date=${date}`)
+      setLookupBookedSlots(res.bookedSlots)
+    } catch {
+      setLookupBookedSlots([])
+    }
+  }
+
+  async function handleReschedule(e: React.FormEvent) {
+    e.preventDefault()
+    if (!lookedUp || !newDate || !newTime) return
+    setActionLoading(true)
+    try {
+      const updated = await api.post<Appointment>('/api/appointments/reschedule', {
+        code: lookedUp.referenceCode,
+        date: `${newDate}T${newTime}:00`,
+      })
+      setLookedUp(updated)
+      setRescheduleMode(false)
+      setNewDate('')
+      setNewTime('')
+      setActionMsg('Randevunuz yeniden planlandı. Klinik onayını bekleyin.')
+    } catch (err) {
+      setLookupError(err instanceof Error ? err.message : 'Bir hata oluştu.')
+    } finally {
+      setActionLoading(false)
+    }
+  }
+
   async function handleApptSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (!appt.name || !appt.phone || !appt.date || !appt.time) {
@@ -95,7 +182,7 @@ const Contact = () => {
     setApptLoading(true)
     setApptError('')
     try {
-      await api.post('/api/appointments', {
+      const result = await api.post<Appointment>('/api/appointments', {
         name: appt.name,
         phone: appt.phone,
         email: appt.email || undefined,
@@ -103,6 +190,7 @@ const Contact = () => {
         subject: appt.subject || undefined,
         notes: appt.notes || undefined,
       })
+      setApptRefCode(result.referenceCode)
       setApptSent(true)
       setAppt({ name: '', phone: '', email: '', date: '', time: '', subject: '', notes: '' })
     } catch (err) {
@@ -197,10 +285,26 @@ const Contact = () => {
             <div className="bg-white rounded-2xl p-8 text-center shadow-sm border border-green-100">
               <CheckCircle className="w-14 h-14 text-green-500 mx-auto mb-4" />
               <h3 className="text-xl font-semibold text-gray-900 mb-2">Randevu Talebiniz Alındı!</h3>
-              <p className="text-gray-600">Kliniğimiz randevunuzu en kısa sürede onaylayacak ve size bilgi verecektir.</p>
+              <p className="text-gray-600 mb-5">Kliniğimiz randevunuzu en kısa sürede onaylayacak ve size bilgi verecektir.</p>
+
+              <div className="bg-cyan-50 border border-cyan-200 rounded-xl p-4 mb-5">
+                <p className="text-xs text-cyan-600 font-medium mb-2">RANDEVU KODUNUZ</p>
+                <div className="flex items-center justify-center gap-3">
+                  <span className="text-2xl font-bold tracking-widest text-cyan-700">{apptRefCode}</span>
+                  <button
+                    onClick={() => copyCode(apptRefCode)}
+                    className="text-cyan-500 hover:text-cyan-700 transition-colors"
+                    title="Kodu kopyala"
+                  >
+                    {copied ? <Check className="w-5 h-5 text-green-500" /> : <Copy className="w-5 h-5" />}
+                  </button>
+                </div>
+                <p className="text-xs text-cyan-500 mt-2">Bu kodu saklayın — randevunuzu sorgulamak veya iptal etmek için gerekli.</p>
+              </div>
+
               <button
-                onClick={() => setApptSent(false)}
-                className="mt-6 text-sm text-cyan-600 hover:underline"
+                onClick={() => { setApptSent(false); setApptRefCode('') }}
+                className="text-sm text-cyan-600 hover:underline"
               >
                 Yeni randevu al
               </button>
@@ -452,6 +556,170 @@ const Contact = () => {
             alt="Klinik Dış Görünüm"
             className="w-full max-w-4xl mx-auto rounded-2xl shadow-xl"
           />
+        </div>
+      </section>
+
+      {/* Randevumu Sorgula */}
+      <section className="py-16 bg-white" id="randevum-sorgula">
+        <div className="max-w-2xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="text-center mb-8">
+            <div className="inline-flex items-center justify-center w-14 h-14 bg-gradient-to-br from-teal-500 to-emerald-600 rounded-2xl mb-4">
+              <Search className="w-7 h-7 text-white" />
+            </div>
+            <h2 className="text-3xl font-bold text-gray-900">Randevumu Sorgula</h2>
+            <p className="text-gray-600 mt-2">Randevu kodunuzla randevunuzu görüntüleyin, iptal edin veya yeniden planlayın.</p>
+          </div>
+
+          <form onSubmit={handleLookup} className="flex gap-3 mb-6">
+            <input
+              type="text"
+              value={lookupCode}
+              onChange={(e) => setLookupCode(e.target.value.toUpperCase())}
+              placeholder="Randevu kodunuz (örn: DT-A3K9P)"
+              className="flex-1 px-4 py-3 rounded-xl border border-gray-200 focus:border-teal-500 focus:ring-2 focus:ring-teal-200 outline-none text-sm font-mono tracking-wider"
+              maxLength={8}
+            />
+            <button
+              type="submit"
+              disabled={lookupLoading || !lookupCode.trim()}
+              className="px-6 py-3 bg-gradient-to-r from-teal-500 to-emerald-600 text-white rounded-xl font-medium text-sm hover:shadow-lg transition-all disabled:opacity-60 whitespace-nowrap"
+            >
+              {lookupLoading ? 'Sorgulanıyor...' : 'Sorgula'}
+            </button>
+          </form>
+
+          {lookupError && (
+            <div className="bg-red-50 border border-red-200 text-red-700 rounded-xl px-4 py-3 text-sm mb-4">
+              {lookupError}
+            </div>
+          )}
+
+          {actionMsg && (
+            <div className="bg-green-50 border border-green-200 text-green-700 rounded-xl px-4 py-3 text-sm mb-4 flex items-center gap-2">
+              <CheckCircle className="w-4 h-4 shrink-0" />
+              {actionMsg}
+            </div>
+          )}
+
+          {lookedUp && (
+            <div className="bg-gray-50 rounded-2xl border border-gray-100 p-6">
+              {/* Randevu bilgileri */}
+              <div className="flex items-start justify-between mb-4">
+                <div>
+                  <p className="font-semibold text-gray-900 text-lg">{lookedUp.name}</p>
+                  <p className="text-sm text-gray-500 font-mono">{lookedUp.referenceCode}</p>
+                </div>
+                <span className={`text-xs font-semibold px-3 py-1 rounded-full ${
+                  lookedUp.status === 'confirmed' ? 'bg-green-100 text-green-700' :
+                  lookedUp.status === 'cancelled' ? 'bg-red-100 text-red-700' :
+                  'bg-amber-100 text-amber-700'
+                }`}>
+                  {lookedUp.status === 'confirmed' ? '✅ Onaylandı' :
+                   lookedUp.status === 'cancelled' ? '❌ İptal Edildi' : '⏳ Onay Bekliyor'}
+                </span>
+              </div>
+
+              <div className="grid sm:grid-cols-2 gap-3 text-sm mb-5">
+                <div className="bg-white rounded-lg p-3 border border-gray-100">
+                  <p className="text-xs text-gray-400 mb-1">Tarih & Saat</p>
+                  <p className="font-medium text-gray-900">
+                    {new Date(lookedUp.date).toLocaleDateString('tr-TR', { day: 'numeric', month: 'long', year: 'numeric' })}
+                    {' — '}
+                    {new Date(lookedUp.date).toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' })}
+                  </p>
+                </div>
+                {lookedUp.subject && (
+                  <div className="bg-white rounded-lg p-3 border border-gray-100">
+                    <p className="text-xs text-gray-400 mb-1">Tedavi</p>
+                    <p className="font-medium text-gray-900">{lookedUp.subject}</p>
+                  </div>
+                )}
+                <div className="bg-white rounded-lg p-3 border border-gray-100">
+                  <p className="text-xs text-gray-400 mb-1">Telefon</p>
+                  <p className="font-medium text-gray-900">{lookedUp.phone}</p>
+                </div>
+                {lookedUp.notes && (
+                  <div className="bg-white rounded-lg p-3 border border-gray-100">
+                    <p className="text-xs text-gray-400 mb-1">Notlar</p>
+                    <p className="font-medium text-gray-900">{lookedUp.notes}</p>
+                  </div>
+                )}
+              </div>
+
+              {/* Aksiyonlar — iptal veya yeniden planla */}
+              {lookedUp.status !== 'cancelled' && !rescheduleMode && (
+                <div className="flex gap-3">
+                  <button
+                    onClick={() => setRescheduleMode(true)}
+                    className="flex-1 py-2.5 border border-teal-500 text-teal-600 rounded-xl text-sm font-medium hover:bg-teal-50 transition-colors"
+                  >
+                    📅 Yeniden Planla
+                  </button>
+                  <button
+                    onClick={handleCancel}
+                    disabled={actionLoading}
+                    className="flex-1 py-2.5 border border-red-300 text-red-600 rounded-xl text-sm font-medium hover:bg-red-50 transition-colors disabled:opacity-60"
+                  >
+                    {actionLoading ? 'İptal ediliyor...' : '❌ İptal Et'}
+                  </button>
+                </div>
+              )}
+
+              {/* Yeniden planlama formu */}
+              {rescheduleMode && (
+                <form onSubmit={handleReschedule} className="border-t border-gray-200 pt-4 mt-2 space-y-3">
+                  <p className="text-sm font-medium text-gray-700">Yeni tarih ve saat seçin:</p>
+                  <div className="grid sm:grid-cols-2 gap-3">
+                    <div>
+                      <input
+                        type="date"
+                        value={newDate}
+                        min={todayStr}
+                        onChange={(e) => handleRescheduleDateChange(e.target.value)}
+                        className={inputCls}
+                        required
+                      />
+                    </div>
+                    <div>
+                      <select
+                        value={newTime}
+                        onChange={(e) => setNewTime(e.target.value)}
+                        className={inputCls}
+                        disabled={!newDate}
+                        required
+                      >
+                        <option value="">{newDate ? 'Saat seçin' : 'Önce tarih seçin'}</option>
+                        {timeSlots.map((t) => {
+                          const booked = lookupBookedSlots.includes(t)
+                          return (
+                            <option key={t} value={t} disabled={booked}>
+                              {t}{booked ? ' — Dolu' : ''}
+                            </option>
+                          )
+                        })}
+                      </select>
+                    </div>
+                  </div>
+                  <div className="flex gap-3">
+                    <button
+                      type="submit"
+                      disabled={actionLoading || !newDate || !newTime}
+                      className="flex-1 py-2.5 bg-gradient-to-r from-teal-500 to-emerald-600 text-white rounded-xl text-sm font-medium disabled:opacity-60"
+                    >
+                      {actionLoading ? 'Kaydediliyor...' : 'Kaydet'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => { setRescheduleMode(false); setNewDate(''); setNewTime('') }}
+                      className="px-4 py-2.5 border border-gray-200 text-gray-600 rounded-xl text-sm"
+                    >
+                      Vazgeç
+                    </button>
+                  </div>
+                </form>
+              )}
+            </div>
+          )}
         </div>
       </section>
 
