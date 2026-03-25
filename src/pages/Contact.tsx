@@ -190,7 +190,7 @@ const Contact = () => {
         subject: appt.subject || undefined,
         notes: appt.notes || undefined,
       })
-      setApptRefCode(result.referenceCode)
+      setApptRefCode(result.referenceCode ?? '')
       setApptSent(true)
       setAppt({ name: '', phone: '', email: '', date: '', time: '', subject: '', notes: '' })
     } catch (err) {
