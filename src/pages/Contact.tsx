@@ -61,6 +61,8 @@ const Contact = () => {
   const [apptLoading, setApptLoading] = useState(false)
   const [apptSent, setApptSent] = useState(false)
   const [apptError, setApptError] = useState('')
+  const [bookedSlots, setBookedSlots] = useState<string[]>([])
+  const [slotsLoading, setSlotsLoading] = useState(false)
 
   // Mesaj formu state
   const [msg, setMsg] = useState({
@@ -69,6 +71,20 @@ const Contact = () => {
   const [msgLoading, setMsgLoading] = useState(false)
   const [msgSent, setMsgSent] = useState(false)
   const [msgError, setMsgError] = useState('')
+
+  async function handleDateChange(date: string) {
+    setAppt((prev) => ({ ...prev, date, time: '' }))
+    if (!date) { setBookedSlots([]); return }
+    setSlotsLoading(true)
+    try {
+      const res = await api.get<{ bookedSlots: string[] }>(`/api/appointments/slots?date=${date}`)
+      setBookedSlots(res.bookedSlots)
+    } catch {
+      setBookedSlots([])
+    } finally {
+      setSlotsLoading(false)
+    }
+  }
 
   async function handleApptSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -237,22 +253,38 @@ const Contact = () => {
                     type="date"
                     value={appt.date}
                     min={todayStr}
-                    onChange={(e) => setAppt({ ...appt, date: e.target.value })}
+                    onChange={(e) => handleDateChange(e.target.value)}
                     className={inputCls}
                     required
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Saat *</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Saat *
+                    {slotsLoading && <span className="text-xs text-gray-400 ml-2">kontrol ediliyor...</span>}
+                  </label>
                   <select
                     value={appt.time}
                     onChange={(e) => setAppt({ ...appt, time: e.target.value })}
                     className={inputCls}
+                    disabled={!appt.date || slotsLoading}
                     required
                   >
-                    <option value="">Saat seçin</option>
-                    {timeSlots.map((t) => <option key={t} value={t}>{t}</option>)}
+                    <option value="">{appt.date ? 'Saat seçin' : 'Önce tarih seçin'}</option>
+                    {timeSlots.map((t) => {
+                      const booked = bookedSlots.includes(t)
+                      return (
+                        <option key={t} value={t} disabled={booked}>
+                          {t}{booked ? ' — Dolu' : ''}
+                        </option>
+                      )
+                    })}
                   </select>
+                  {bookedSlots.length > 0 && !slotsLoading && (
+                    <p className="text-xs text-gray-400 mt-1">
+                      {bookedSlots.length} saat dolu, diğerleri müsait.
+                    </p>
+                  )}
                 </div>
               </div>
               <div>
